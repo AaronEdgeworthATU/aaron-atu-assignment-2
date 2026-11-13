@@ -1,0 +1,16 @@
+# Downloaded providers/modules: large binaries, recreated by `terraform init`
+.terraform/
+
+# Local state can contain secrets; HCP Terraform stores state remotely instead
+*.tfstate
+*.tfstate.*
+
+# Variable files often hold credentials
+*.tfvars
+!example.tfvars
+
+# Crash logs
+crash.log
+
+# NOTE: .terraform.lock.hcl and tfplan are deliberately NOT ignored:
+# both are assignment deliverables.

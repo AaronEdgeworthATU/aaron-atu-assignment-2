@@ -10,3 +10,5 @@ In main.tf the providers tag establishes the baseline AWS Services. An EC2 t3.mi
 service for web hosting. Importantly it alters some of the metadata_options requiring IMDSv2 tokens, 
 requiring connections to possess an assigned connection token first.
 
+Versioning issues when running 'terraform plan'. Alterations made to the version to allow any 1.17.x 
+version.

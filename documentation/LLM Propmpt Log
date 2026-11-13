@@ -1,0 +1,1 @@
+I've been given a college assignment that requires students to craft a terraform hcp policy that implements rules that ensure digital soverignity. I've provided the suggested project structure, folders and files. Can you provide a baseline terraform stack that will allow me to build from? Please include comments to provide a quick reference as to what is established.

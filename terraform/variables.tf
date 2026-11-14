@@ -55,10 +55,23 @@ variable "vpc_cidr" {
   default     = "10.0.0.0/16"
 }
 
-variable "subnet_cidr" {
-  description = "IP address range for the subnet (must sit inside vpc_cidr)."
+# Each subnet takes a separate /24 (256 addresses) inside the VPC's /16.
+variable "public_subnet_cidr" {
+  description = "IP range for the public subnet (internet-facing, e.g. load balancer)."
   type        = string
   default     = "10.0.1.0/24"
+}
+
+variable "app_subnet_cidr" {
+  description = "IP range for the private app subnet (web server)."
+  type        = string
+  default     = "10.0.2.0/24"
+}
+
+variable "data_subnet_cidr" {
+  description = "IP range for the private data subnet (future database)."
+  type        = string
+  default     = "10.0.3.0/24"
 }
 
 variable "admin_ssh_cidr" {

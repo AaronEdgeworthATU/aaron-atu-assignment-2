@@ -80,4 +80,35 @@ In practice, because of point 4, that 443 rule can't receive anything from the i
 Egress controls connections the instance starts, e.g. downloading updates, not replies.
 Replies to inbound connections are allowed automatically, because security groups are stateful: if a connection was allowed in, its response is always allowed out, whatever the egress rules say. You could delete the egress block entirely and HTTPS replies would still work. -->
 
-Prompt 2.2:
+---
+
+<!-- Prompt 3:
+Currently there exists one subnet called "main" that has no internet gateway attached. To enhance security I think it's a good idea to ensure that the only the minimium services needed exist on a public subnet, like the "web" aws_instance. Ill need private subnets for the sensitive data. I've added the general layout, can you seperate the services out into private subnets for seperation of concerns? -->
+
+<!-- Response 3:
+
+I've restructured the network into three tiers, and all five policies pass against a plan of the new stack.
+
+Your EBS idea, corrected: an EBS volume can't be put in a subnet. It's a disk attached directly to one instance, so the data volume is always wherever web is. Separating sensitive data by subnet only works for a separate data service, such as a future database. So the data tier is now ready for that, and the EBS volume stays attached to web.
+
+The new layout (all in eu-west-1a):
+
+
+VPC 10.0.0.0/16
+├── public  10.0.1.0/24  internet gateway route; empty, reserved for a future load balancer
+├── app     10.0.2.0/24  PRIVATE: web server + its encrypted EBS data disk
+└── data    10.0.3.0/24  PRIVATE: reserved for a database
+network.tf:
+Adds an internet gateway and a public route table. Having a route to the internet gateway is the only thing that makes a subnet "public".
+Adds the public, app and data subnets. None of them assigns public IPs automatically.
+Adds a private route table with no internet route, used by app and data. There's no NAT gateway because it costs money; the comments explain this.
+Adds a new data security group that only accepts PostgreSQL (5432) from resources in the web security group, not from any IP range, and allows no outbound traffic.
+variables.tf: subnet_cidr is replaced by public_subnet_cidr, app_subnet_cidr and data_subnet_cidr.
+main.tf: web now launches in the app subnet, and the EBS volume follows its availability zone. A comment notes that disks don't live in subnets.
+
+Checked:
+
+terraform validate passes.
+A plan of the new stack has 15 resources to add, up from 6.
+All five policies pass against that plan and still fail the broken mock.
+-->

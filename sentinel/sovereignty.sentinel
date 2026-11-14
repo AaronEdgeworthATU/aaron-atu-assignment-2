@@ -1,0 +1,95 @@
+# -----------------------------------------------------------------------------
+# sovereignty.sentinel
+# Digital sovereignty policy for L00205292.
+#
+# Enforces three things against the Terraform PLAN (before anything is built):
+#   1. Every resource's region is on the approved list (Ireland only).
+#   2. Every availability zone sits inside an approved region.
+#   3. Anything tagged as holding sensitive data is marked for Irish residency.
+#
+# Sentinel basics used here:
+#   import  - loads data; "tfplan/v2" is the planned changes, as structured data
+#   param   - a value that can be overridden from sentinel.hcl without editing
+#             the code (e.g. to add an approved region later)
+#   filter  - returns the items of a collection that match a condition
+#   rule    - a named true/false check; "main" decides pass or fail
+# -----------------------------------------------------------------------------
+
+import "tfplan/v2" as tfplan
+import "strings"
+
+# eu-west-1 = Dublin. A list, so a second EU region could be approved for
+# disaster recovery later without touching the logic below.
+param approved_regions default ["eu-west-1"]
+
+# Tag values that mean "this resource holds sensitive data".
+param sensitive_classifications default ["sensitive", "confidential"]
+
+# -----------------------------------------------------------------------------
+# Step 1: pick out the resources this plan will CREATE or UPDATE.
+# resource_changes is a map keyed by resource address, e.g. "aws_vpc.main".
+# Resources being destroyed or read ("data" sources) are not new deployments.
+# -----------------------------------------------------------------------------
+changing_resources = filter tfplan.resource_changes as _, rc {
+	rc.mode is "managed" and
+		(rc.change.actions contains "create" or rc.change.actions contains "update")
+}
+
+# -----------------------------------------------------------------------------
+# Step 2: find violations. Each filter returns a map of offending resources.
+#
+# "x else null" means: if x is undefined (the attribute doesn't exist, or its
+# value is "known after apply"), use null instead of erroring. We only judge
+# values that are actually known at plan time; this is a real limitation of
+# plan-time enforcement, worth discussing in the README.
+# -----------------------------------------------------------------------------
+
+# AWS provider v6 records a "region" attribute on every resource.
+region_violations = filter changing_resources as _, rc {
+	(rc.change.after.region else null) is not null and
+		rc.change.after.region not in approved_regions
+}
+
+# An AZ like "eu-west-1a" must START with an approved region name.
+az_violations = filter changing_resources as _, rc {
+	(rc.change.after.availability_zone else null) is not null and
+		not any approved_regions as region {
+			strings.has_prefix(rc.change.after.availability_zone, region)
+		}
+}
+
+# Data residency: tags_all = the resource's own tags PLUS provider default_tags.
+# Sensitive resources must declare DataResidency = "IE".
+residency_violations = filter changing_resources as _, rc {
+	(rc.change.after.tags_all.DataClassification else "") in sensitive_classifications and
+		(rc.change.after.tags_all.DataResidency else "") is not "IE"
+}
+
+# -----------------------------------------------------------------------------
+# Step 3: explain failures. print() output appears in the HCP Terraform policy
+# check results, so whoever's plan fails can see exactly why.
+# -----------------------------------------------------------------------------
+for region_violations as address, rc {
+	print(address, "uses region", rc.change.after.region,
+		"- approved regions are", approved_regions)
+}
+
+for az_violations as address, rc {
+	print(address, "uses availability zone", rc.change.after.availability_zone,
+		"- outside approved regions", approved_regions)
+}
+
+for residency_violations as address, _ {
+	print(address, "holds sensitive data but is not tagged DataResidency = IE")
+}
+
+# -----------------------------------------------------------------------------
+# Step 4: the verdict. The policy passes only if every violation map is empty.
+# -----------------------------------------------------------------------------
+regions_approved = rule { length(region_violations) is 0 }
+zones_approved = rule { length(az_violations) is 0 }
+residency_declared = rule { length(residency_violations) is 0 }
+
+main = rule {
+	regions_approved and zones_approved and residency_declared
+}

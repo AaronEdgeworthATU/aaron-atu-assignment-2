@@ -1,0 +1,151 @@
+# -----------------------------------------------------------------------------
+# network.sentinel
+# Network security rules:
+#   1. No SSH (port 22) open to the whole internet.
+#   2. Nothing else open to the internet except approved public ports (HTTPS).
+#   3. Subnets and instances must not hand out public IPs automatically.
+#
+# Terraform link: checks network.tf
+#   aws_security_group.web -> ingress { cidr_blocks, from_port, to_port }
+#   aws_subnet.main        -> map_public_ip_on_launch
+#   aws_instance.web       -> associate_public_ip_address (main.tf)
+#
+# Inbound rules can be written in THREE different ways in Terraform, so all
+# three are collected; otherwise a rule could dodge the policy just by using
+# a different resource type.
+# -----------------------------------------------------------------------------
+
+import "tfplan/v2" as tfplan
+
+# Ports that may be open to the whole internet.
+param public_ports default [443]
+
+# "The whole internet" for IPv4 and IPv6.
+internet = ["0.0.0.0/0", "::/0"]
+
+changing = filter tfplan.resource_changes as _, rc {
+	rc.mode is "managed" and
+		(rc.change.actions contains "create" or rc.change.actions contains "update")
+}
+
+# ---- Helpers ----------------------------------------------------------------
+
+# Turn null into an empty list, so lists can be safely joined with "+".
+as_list = func(v) {
+	if v is null {
+		return []
+	}
+	return v
+}
+
+# True if a rule's source addresses include the whole internet.
+open_to_internet = func(cidrs) {
+	return any cidrs as c { c in internet }
+}
+
+# True if a rule allows the given port. Protocol "-1" means ALL traffic.
+allows_port = func(protocol, from, to, port) {
+	if protocol is "-1" {
+		return true
+	}
+	return protocol in ["tcp", "6"] and from <= port and to >= port
+}
+
+# True if a rule opens exactly one approved public port over TCP.
+is_approved_public = func(protocol, from, to) {
+	return protocol in ["tcp", "6"] and from is to and from in public_ports
+}
+
+# ---- Collect every inbound rule into one simple list -------------------------
+# Each item: { address, protocol, from, to, cidrs }
+
+ingress_rules = []
+
+for changing as address, rc {
+	after = rc.change.after
+
+	# Style 1: inline ingress blocks inside aws_security_group (what we use).
+	if rc.type is "aws_security_group" {
+		for as_list(after.ingress else null) as r {
+			append(ingress_rules, {
+				"address":  address,
+				"protocol": r.protocol,
+				"from":     r.from_port,
+				"to":       r.to_port,
+				"cidrs":    as_list(r.cidr_blocks else null) + as_list(r.ipv6_cidr_blocks else null),
+			})
+		}
+	}
+
+	# Style 2: separate aws_security_group_rule resources of type "ingress".
+	if rc.type is "aws_security_group_rule" and (after.type else "") is "ingress" {
+		append(ingress_rules, {
+			"address":  address,
+			"protocol": after.protocol else "-1",
+			"from":     after.from_port else 0,
+			"to":       after.to_port else 65535,
+			"cidrs":    as_list(after.cidr_blocks else null) + as_list(after.ipv6_cidr_blocks else null),
+		})
+	}
+
+	# Style 3: the newer aws_vpc_security_group_ingress_rule resource
+	# (one CIDR per rule, in cidr_ipv4 / cidr_ipv6).
+	if rc.type is "aws_vpc_security_group_ingress_rule" {
+		cidrs = []
+		if (after.cidr_ipv4 else null) is not null {
+			append(cidrs, after.cidr_ipv4)
+		}
+		if (after.cidr_ipv6 else null) is not null {
+			append(cidrs, after.cidr_ipv6)
+		}
+		append(ingress_rules, {
+			"address":  address,
+			"protocol": after.ip_protocol else "-1",
+			"from":     after.from_port else 0,
+			"to":       after.to_port else 65535,
+			"cidrs":    cidrs,
+		})
+	}
+}
+
+# ---- Find violations ------------------------------------------------------------
+
+# 1. SSH reachable from anywhere.
+ssh_violations = filter ingress_rules as r {
+	open_to_internet(r.cidrs) and allows_port(r.protocol, r.from, r.to, 22)
+}
+
+# 2. Any other internet-facing rule that isn't an approved public port.
+#    (SSH is excluded here so it isn't reported twice.)
+public_port_violations = filter ingress_rules as r {
+	open_to_internet(r.cidrs) and
+		not allows_port(r.protocol, r.from, r.to, 22) and
+		not is_approved_public(r.protocol, r.from, r.to)
+}
+
+# 3. Automatic public IPs on subnets or instances.
+public_ip_violations = filter changing as _, rc {
+	(rc.type is "aws_subnet" and (rc.change.after.map_public_ip_on_launch else false) is true) or
+		(rc.type is "aws_instance" and (rc.change.after.associate_public_ip_address else false) is true)
+}
+
+for ssh_violations as r {
+	print(r.address, "allows SSH (port 22) from the internet", r.cidrs)
+}
+
+for public_port_violations as r {
+	print(r.address, "opens", r.protocol, "ports", r.from, "-", r.to,
+		"to the internet - only", public_ports, "are approved")
+}
+
+for public_ip_violations as address, _ {
+	print(address, "assigns public IP addresses automatically")
+}
+
+no_public_ssh = rule { length(ssh_violations) is 0 }
+only_approved_public_ports = rule { length(public_port_violations) is 0 }
+no_auto_public_ips = rule { length(public_ip_violations) is 0 }
+
+main = rule {
+	no_public_ssh and only_approved_public_ports and no_auto_public_ips
+}

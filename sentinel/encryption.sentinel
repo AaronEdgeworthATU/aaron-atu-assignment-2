@@ -1,0 +1,58 @@
+# -----------------------------------------------------------------------------
+# encryption.sentinel
+# All EBS storage must be encrypted at rest.
+#
+# Why: if a disk or snapshot is ever exposed, the data is unreadable without
+# the KMS key. Encryption can't be switched on for an existing volume later,
+# so it has to be right when the plan is made.
+#
+# Terraform link: EBS disks can be declared in three places, so all three
+# are checked:
+#   1. aws_instance -> root_block_device { encrypted }  (main.tf, boot disk)
+#   2. aws_instance -> ebs_block_device  { encrypted }  (extra disks inline)
+#   3. aws_ebs_volume -> encrypted                      (main.tf, data disk)
+# -----------------------------------------------------------------------------
+
+import "tfplan/v2" as tfplan
+
+# Resources this plan will create or update.
+changing = filter tfplan.resource_changes as _, rc {
+	rc.mode is "managed" and
+		(rc.change.actions contains "create" or rc.change.actions contains "update")
+}
+
+# Helper: true if any disk in a list is not explicitly encrypted.
+# Nested blocks appear in the plan as LISTS, e.g. root_block_device[0].
+has_unencrypted = func(disks) {
+	return any disks as d { (d.encrypted else false) is not true }
+}
+
+# 1 + 2: instances with an unencrypted boot disk or inline extra disk.
+# A missing root_block_device block means the AMI's default is used, which
+# may be unencrypted, so that counts as a violation too (fail closed).
+instance_violations = filter changing as _, rc {
+	rc.type is "aws_instance" and
+		(length(rc.change.after.root_block_device else []) is 0 or
+			has_unencrypted(rc.change.after.root_block_device else []) or
+			has_unencrypted(rc.change.after.ebs_block_device else []))
+}
+
+# 3: standalone EBS volumes that aren't encrypted.
+volume_violations = filter changing as _, rc {
+	rc.type is "aws_ebs_volume" and
+		(rc.change.after.encrypted else false) is not true
+}
+
+for instance_violations as address, _ {
+	print(address, "has a boot or attached disk that is not encrypted",
+		"(set encrypted = true in root_block_device / ebs_block_device)")
+}
+
+for volume_violations as address, _ {
+	print(address, "is an EBS volume without encrypted = true")
+}
+
+instances_encrypted = rule { length(instance_violations) is 0 }
+volumes_encrypted = rule { length(volume_violations) is 0 }
+
+main = rule { instances_encrypted and volumes_encrypted }

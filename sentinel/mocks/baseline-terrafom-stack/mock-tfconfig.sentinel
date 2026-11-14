@@ -1,0 +1,303 @@
+import "strings"
+import "types"
+
+_modules = {
+	"root": {
+		"data":    {},
+		"modules": {},
+		"outputs": {},
+		"providers": {
+			"aws": {
+				"alias": {
+					"": {
+						"config": {
+							"default_tags": [
+								{},
+							],
+							"skip_credentials_validation": true,
+							"skip_metadata_api_check":     true,
+							"skip_requesting_account_id":  true,
+						},
+						"references": {
+							"default_tags": [
+								{
+									"tags": [
+										"var.organisation",
+										"var.environment",
+										"var.data_classification",
+									],
+								},
+							],
+							"region": [
+								"var.aws_region",
+							],
+							"skip_credentials_validation": [],
+							"skip_metadata_api_check":     [],
+							"skip_requesting_account_id":  [],
+						},
+						"version": "~> 6.0",
+					},
+				},
+				"config": {
+					"default_tags": [
+						{},
+					],
+					"skip_credentials_validation": true,
+					"skip_metadata_api_check":     true,
+					"skip_requesting_account_id":  true,
+				},
+				"references": {
+					"default_tags": [
+						{
+							"tags": [
+								"var.organisation",
+								"var.environment",
+								"var.data_classification",
+							],
+						},
+					],
+					"region": [
+						"var.aws_region",
+					],
+					"skip_credentials_validation": [],
+					"skip_metadata_api_check":     [],
+					"skip_requesting_account_id":  [],
+				},
+				"version": "~> 6.0",
+			},
+		},
+		"resources": {
+			"aws_ebs_volume": {
+				"data": {
+					"config": {
+						"encrypted": true,
+						"size":      10,
+						"type":      "gp3",
+					},
+					"provisioners": null,
+					"references": {
+						"availability_zone": [
+							"aws_subnet.main.availability_zone",
+							"aws_subnet.main",
+						],
+						"encrypted": [],
+						"size":      [],
+						"tags": [
+							"var.organisation",
+						],
+						"type": [],
+					},
+				},
+			},
+			"aws_instance": {
+				"web": {
+					"config": {
+						"root_block_device": [
+							{
+								"encrypted":   true,
+								"volume_size": 8,
+								"volume_type": "gp3",
+							},
+						],
+					},
+					"provisioners": null,
+					"references": {
+						"ami": [
+							"var.ami_id",
+						],
+						"instance_type": [
+							"var.instance_type",
+						],
+						"root_block_device": [
+							{
+								"encrypted":   [],
+								"volume_size": [],
+								"volume_type": [],
+							},
+						],
+						"subnet_id": [
+							"aws_subnet.main.id",
+							"aws_subnet.main",
+						],
+						"tags": [
+							"var.organisation",
+						],
+						"vpc_security_group_ids": [
+							"aws_security_group.web.id",
+							"aws_security_group.web",
+						],
+					},
+				},
+			},
+			"aws_security_group": {
+				"web": {
+					"config": {
+						"description": "Allow HTTPS from anywhere, SSH only from the admin network",
+						"egress": [
+							{
+								"cidr_blocks": [
+									"0.0.0.0/0",
+								],
+								"description":      "Allow all outbound traffic",
+								"from_port":        0,
+								"ipv6_cidr_blocks": null,
+								"prefix_list_ids":  null,
+								"protocol":         "-1",
+								"security_groups":  null,
+								"self":             null,
+								"to_port":          0,
+							},
+						],
+					},
+					"provisioners": null,
+					"references": {
+						"description": [],
+						"egress":      [],
+						"ingress": [
+							"var.admin_ssh_cidr",
+						],
+						"name": [
+							"var.organisation",
+						],
+						"tags": [
+							"var.organisation",
+						],
+						"vpc_id": [
+							"aws_vpc.main.id",
+							"aws_vpc.main",
+						],
+					},
+				},
+			},
+			"aws_subnet": {
+				"main": {
+					"config": {
+						"map_public_ip_on_launch": false,
+					},
+					"provisioners": null,
+					"references": {
+						"availability_zone": [
+							"var.aws_region",
+						],
+						"cidr_block": [
+							"var.subnet_cidr",
+						],
+						"map_public_ip_on_launch": [],
+						"tags": [
+							"var.organisation",
+						],
+						"vpc_id": [
+							"aws_vpc.main.id",
+							"aws_vpc.main",
+						],
+					},
+				},
+			},
+			"aws_volume_attachment": {
+				"data": {
+					"config": {
+						"device_name": "/dev/sdf",
+					},
+					"provisioners": null,
+					"references": {
+						"device_name": [],
+						"instance_id": [
+							"aws_instance.web.id",
+							"aws_instance.web",
+						],
+						"volume_id": [
+							"aws_ebs_volume.data.id",
+							"aws_ebs_volume.data",
+						],
+					},
+				},
+			},
+			"aws_vpc": {
+				"main": {
+					"config": {
+						"enable_dns_hostnames": true,
+						"enable_dns_support":   true,
+					},
+					"provisioners": null,
+					"references": {
+						"cidr_block": [
+							"var.vpc_cidr",
+						],
+						"enable_dns_hostnames": [],
+						"enable_dns_support":   [],
+						"tags": [
+							"var.organisation",
+						],
+					},
+				},
+			},
+		},
+		"variables": {
+			"admin_ssh_cidr": {
+				"default":     "203.0.113.0/24",
+				"description": "The ONLY network allowed to SSH in, e.g. an office or VPN range.",
+			},
+			"ami_id": {
+				"default":     "ami-0123456789abcdef0",
+				"description": "AMI (machine image) ID for the EC2 instance.",
+			},
+			"aws_region": {
+				"default":     "eu-west-1",
+				"description": "AWS region to deploy into. Must be an approved sovereign region.",
+			},
+			"data_classification": {
+				"default":     "sensitive",
+				"description": "Sensitivity of data handled by these resources.",
+			},
+			"environment": {
+				"default":     "dev",
+				"description": "Deployment environment name (dev, test, prod).",
+			},
+			"instance_type": {
+				"default":     "t3.micro",
+				"description": "EC2 instance size. Must be on the approved list.",
+			},
+			"organisation": {
+				"default":     "L00205292",
+				"description": "Organisation identifier, applied as a tag.",
+			},
+			"subnet_cidr": {
+				"default":     "10.0.1.0/24",
+				"description": "IP address range for the subnet (must sit inside vpc_cidr).",
+			},
+			"vpc_cidr": {
+				"default":     "10.0.0.0/16",
+				"description": "IP address range for the VPC.",
+			},
+		},
+	},
+}
+
+module_paths = [
+	[],
+]
+
+module = func(path) {
+	if types.type_of(path) is not "list" {
+		error("expected list, got", types.type_of(path))
+	}
+
+	if length(path) < 1 {
+		return _modules.root
+	}
+
+	addr = []
+	for path as p {
+		append(addr, "module")
+		append(addr, p)
+	}
+
+	return _modules[strings.join(addr, ".")]
+}
+
+data = _modules.root.data
+modules = _modules.root.modules
+providers = _modules.root.providers
+resources = _modules.root.resources
+variables = _modules.root.variables
+outputs = _modules.root.outputs

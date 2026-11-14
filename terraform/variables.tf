@@ -20,7 +20,7 @@ variable "aws_region" {
 variable "organisation" {
   description = "Organisation identifier, applied as a tag."
   type        = string
-  default     = "ATUL0012345"
+  default     = "L00205292"
 }
 
 variable "environment" {

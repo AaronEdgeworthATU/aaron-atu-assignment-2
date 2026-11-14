@@ -11,7 +11,7 @@ resource "aws_vpc" "main" {
   enable_dns_hostnames = true # gives instances internal DNS hostnames
 
   tags = {
-    Name = "${var.organisation}-vpc" # e.g. "ATUL0012345-vpc"
+    Name = "${var.organisation}-vpc" # e.g. "L00205292-vpc"
   }
 }
 

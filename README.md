@@ -12,3 +12,5 @@ requiring connections to possess an assigned connection token first.
 
 Versioning issues when running 'terraform plan'. Alterations made to the version to allow any 1.17.x 
 version.
+
+I have the Terraform files set up. The main.tf file establishes an instance type of t3.micro to host the application called "web". The aws_instance contains a root_block_device to store the data required for hosting and configuirting the AWS Web Instance. Seperately there is an Elastic Bean Stalk valoume, named "data", that will contain the possibly sensitive data. In the "data" ebs volume, the encryption tag is set to "true". This ensures that the data stored on the aws_ebs_volume is seperate from where the EC2 web OS and configuration is stored. The enyption will be specified using "encryption.sentinel".

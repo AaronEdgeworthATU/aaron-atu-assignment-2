@@ -1,1 +1,83 @@
+<!-- Prompt 1.1:
 I've been given a college assignment that requires students to craft a terraform hcp policy that implements rules that ensure digital soverignity. I've provided the suggested project structure, folders and files. Can you provide a baseline terraform stack that will allow me to build from? Please include comments to provide a quick reference as to what is established.
+-->
+
+
+<!-- Response 1.1: 
+I wrote a commented starting point across the five Terraform files. Nothing has been planned or deployed yet.
+
+File	What it teaches
+versions.tf	= Pinning the Terraform version, where the AWS provider comes from, and its allowed version. This is where supply-chain control starts. The HCP Terraform cloud block is there but commented out.
+providers.tf = Setting the region (Ireland) and tags added to every resource, such as DataResidency = "IE". It also has optional settings that let a plan run without real AWS credentials.
+variables.tf = The inputs: region, instance type, network ranges and the one network allowed to SSH in. The region variable rejects anything other than eu-west-1.
+network.tf = A private network (VPC), a subnet with no public IPs, and a firewall that allows HTTPS from anywhere but SSH only from the admin network.
+main.tf = A server with IMDSv2 required and an encrypted boot disk, plus an encrypted data disk. Comments link each setting to the Sentinel policy that will check it.
+Every setting is currently the compliant version, so this is your "pass" baseline.
+
+Other things that changed:
+
+Checking the code ran terraform init, which created .terraform.lock.hcl. That file records the exact provider version and its checksums, and it's one of your deliverables, so commit it.
+I added a .gitignore so the downloaded provider files (several hundred MB) and any state files stay out of GitHub. The lock file and tfplan are not ignored.
+When you run a plan: terraform plan -out=tfplan saves the plan as a binary file named tfplan. To also get a readable copy for your evidence, run terraform show -no-color tfplan > tfplan.txt.
+
+Learning ideas:
+
+Change aws_region to us-east-1 and run terraform plan to see the region check reject it.
+Change http_tokens to "optional". Nothing stops it yet, and catching that is the job the Sentinel policies will do.
+-->
+
+--- 
+
+<!-- Prompt 2.1:
+To ensure Im understanding correctly. At a high level the main.tf file is where the resources that are required (In this case aws services) will be defined. Currently it's defining an aws_instance called "web". The instance type is defined in the variables.tf file and it is a EC2 t3.micro instance. Within the web aws instance there is storage defined for it to exist in called "root_block_device" with parameters that are enabled to ensure that the data is encrypted, and defines the storage size at 8GB.
+
+There's an EBS storage defined seperately, deployed in "aws_region", which is defined in the variables.tf file as "eu_west_1", which is Dublin and under EU digital jurisdiction.
+
+The network.tf file is where the VPC and subnets are defined. The main VPC get's its CIDR block from variables.tf (10.0.0.0/16). Below in network.tf there is the "main" subnet defenition, which is again in the "eu_west_1" availability zone. Importantly the "map_public_ip_on_launch" is set to false to ensure that when created the subnet is not allowing pulic connections.
+
+Below the subnet there is an aws_security_group defenition that  appears to allow full public internet access to the vpc, unless Im misunderstanding that. Ingress is permitted to accept any TCP protocols to and from port 443. A second ingress  for SSH protocol is allowed ONLY from the connections with the IP CIDR Block "203.0.113.0/24".  The egress defines where the vpc is permitted to send data too, with protocol set to -1 meaning any protocol, and the default gateway 0.0.0.0/0 allowing responses to any connection.
+
+How is my understanding? -->
+
+<!-- Response 2.1:
+
+Your overall picture is right. A few details are off, and some of them matter for the policies and the README.
+
+What you've got right
+main.tf defines the compute and storage, and network.tf the networking. ✅
+aws_instance.web gets t3.micro from variables.tf. ✅
+root_block_device is encrypted and 8 GiB. ✅ (More precisely, it's the boot disk the operating system lives on, rather than storage for the instance to "exist in".)
+The VPC gets 10.0.0.0/16 from variables.tf. ✅
+SSH is only allowed from 203.0.113.0/24. ✅ (That's a reserved documentation range, i.e. a placeholder for "your office/VPN".)
+Corrections
+1. File names don't affect what a file can contain.
+Terraform loads every .tf file in the folder as one configuration. Splitting into main.tf / network.tf is purely a convention for humans. The VPC is just as much a "required AWS resource" as the instance, and you could put everything in one file and it would work identically.
+
+2. Region vs availability zone, and how each is set.
+
+The EBS volume doesn't set a region itself. The region comes from the provider (region = var.aws_region in providers.tf) and applies to every resource.
+What the volume does set is an availability zone, copied from the subnet: eu-west-1a.
+A region (eu-west-1, Dublin) contains several AZs (eu-west-1a, -1b, -1c), which are separate data-centre groups. The subnet is in AZ eu-west-1a, not "the eu-west-1 availability zone".
+Small but important for code: it's eu-west-1 with hyphens. eu_west_1 would fail validation.
+3. "Under EU digital jurisdiction" needs a caveat, and it's a key README point.
+Data stored in Dublin is subject to Irish/EU law, but AWS is a US company, so it's also subject to US laws such as the CLOUD Act, which can compel US providers to hand over data regardless of where it's stored. That's exactly the "limitations of region-based data residency controls" the brief asks you to discuss: location ≠ jurisdiction. Customer-managed encryption keys and EU-owned "sovereign cloud" offerings exist largely because of this.
+
+4. map_public_ip_on_launch = false doesn't block public connections by itself.
+It means instances launched in the subnet don't automatically get a public IP address. Without one, nothing on the internet can address them. But:
+
+You could still attach a public IP manually (e.g. an Elastic IP).
+More importantly, this VPC has no internet gateway at all, so there's no route to or from the internet anyway. The stack is currently completely private, and that's actually what isolates it.
+5. The security group doesn't open up the VPC.
+This is the main misunderstanding. A security group is a firewall attached to individual instances (strictly, to their network interfaces), not to the VPC. It only applies to resources that list it, here only aws_instance.web via vpc_security_group_ids. So it means "the web server accepts HTTPS from anywhere", not "the VPC allows full internet access".
+
+Also, from_port = 443, to_port = 443 isn't "to and from"; it's a port range (start to end). It's just a range of one port. from_port = 8000, to_port = 8100 would open 101 ports.
+
+In practice, because of point 4, that 443 rule can't receive anything from the internet right now. It's written for when you add an internet gateway and a public IP.
+
+6. Egress: 0.0.0.0/0 means "any address", not "default gateway".
+
+0.0.0.0/0 is the CIDR for every IPv4 address. It looks like the default route in a route table, which is why it's easy to mix up, but here it just means "any destination".
+Egress controls connections the instance starts, e.g. downloading updates, not replies.
+Replies to inbound connections are allowed automatically, because security groups are stateful: if a connection was allowed in, its response is always allowed out, whatever the egress rules say. You could delete the egress block entirely and HTTPS replies would still work. -->
+
+Prompt 2.2:

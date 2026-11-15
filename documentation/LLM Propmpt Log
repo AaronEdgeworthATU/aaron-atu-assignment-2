@@ -112,3 +112,94 @@ terraform validate passes.
 A plan of the new stack has 15 resources to add, up from 6.
 All five policies pass against that plan and still fail the broken mock.
 -->
+
+---
+
+<!-- Prompt 4:
+Explain lines 19 - 22 in main.tf -->
+
+<!-- Response 4:
+Explained the metadata_options block on aws_instance.web. http_endpoint = "enabled" keeps the Instance Metadata Service on, http_tokens = "required" forces IMDSv2 (session tokens), and http_put_response_hop_limit = 1 stops the token travelling beyond the instance (e.g. into containers). Explained that the metadata service hands out the instance's temporary AWS credentials, so IMDSv1 is exploitable through SSRF attacks (e.g. the Capital One breach). Noted these values are known at plan time, so Sentinel can check them with certainty.
+-->
+
+---
+
+<!-- Prompt 4.1:
+Explain this to me: "IMDSv1: any plain GET request gets an answer. No authentication, no handshake.
+IMDSv2: you must first send a PUT request to get a session token, then include that token in every later request." -->
+
+<!-- Response 4.1:
+Explained HTTP GET vs PUT with curl examples. IMDSv1 returns credentials to a single GET request. IMDSv2 requires a PUT request to get a token first, then the token in a header on every request. An SSRF attacker usually only controls a URL (a plain GET), so cannot perform the PUT and custom header steps, which blocks the attack. Also covered the X-Forwarded-For rejection and the hop limit.
+-->
+
+---
+
+<!-- Prompt 5:
+Let's write the sentinel policies. Comment the sentinel files simply to explain the relevant info. Provide here in the chat a basic rundown of whats happening and how the policy files relate to the existing terraform. Then finish with a small summary of what stage the assignment is at. -->
+
+<!-- Response 5:
+Wrote instance_type.sentinel, encryption.sentinel, metadata.sentinel and network.sentinel, and registered all five policies in sentinel.hcl (4 hard-mandatory, instance_type soft-mandatory). Explained that the policies read the Terraform plan (tfplan/v2), not the .tf files, and that they "fail closed" on missing or unknown values. Tested each policy against the real HCP mock and a deliberately broken mock. Flagged that the metadata_options block had been removed from main.tf, so the stack was failing the metadata policy.
+-->
+
+---
+
+<!-- Prompt 6:
+the plan worked. I ran terraform plan and it succeeded, and on app.terraform.io I can "Download Sentinel Mocks", which consists of a compressed file with several .sentinel files and a sentinel.hcl file. -->
+
+<!-- Response 6:
+Explained the HCP run (6 resources planned, no policy check yet as no policy set was connected). Explained each mock file: mock-tfplan-v2 (planned changes, used by most policies), mock-tfconfig-v2 (the code as written, for supply chain checks), mock-tfstate-v2, mock-tfrun and the older v1 formats. Suggested extracting them into the repo as test data and evidence.
+-->
+
+---
+
+<!-- Prompt 7:
+I adde the first 2 policies but I've reached a limit of policies. All that is available is "Advisory" -->
+
+<!-- Response 7:
+Explained the HCP free plan only allows a limited number of mandatory policies (and no VCS-connected policy sets), so the remaining policies had to be added as advisory. Advisory policies still run and show failures but do not block the run. Suggested the failed run should break a mandatory rule so the run is blocked, and to document the free plan limitation in the README.
+-->
+
+---
+
+<!-- Prompt 8:
+Is the supply chain section a requirenment? Was it included in the hint? I feel this has added complication and muddles my understanding of it a bit -->
+
+<!-- Response 8:
+Confirmed supply chain security is a requirement in the brief, but the hint folder has no supply_chain.sentinel and the brief says "controls" rather than "Sentinel policies". Showed it can be covered by versions.tf (source and version), the .terraform.lock.hcl checksums and a README explanation. I chose to remove the supply chain policy (option 2) to keep the project understandable.
+-->
+
+---
+
+<!-- Prompt 9:
+Give me an update on whats happened. Im going to keep each policy run to a commit. So I ran policy after changing the code to break the policy rules. So when checking on Github the lecturer can check the commits and see what's changed and what was added. I think I still need to mention something in the README.md about what happened in this commit (the failed run). -->
+
+<!-- Response 9:
+Confirmed the failed run worked: sovereignty (hard-mandatory) failed and blocked the run due to DataResidency = "US", while encryption, metadata and network failed as advisory warnings and instance_type passed. Noted the sovereignty policy flagged 11 resources because DataClassification is applied to every resource through default_tags. Provided a README draft for the failed run.
+-->
+
+---
+
+<!-- Prompt 10:
+I made a small mistake, I merged and pushed to main with the broken state, I autopiloted, apologies. Could you help me revert the changes and comments, without losing the updates added to main. -->
+
+<!-- Response 10:
+Confirmed only the "Causing FAIL" commit changed the .tf files, and restored main.tf, providers.tf and variables.tf to the compliant version from the "Compliant run" commit, leaving the evidence, mocks and README untouched. Validated the Terraform.
+-->
+
+---
+
+<!-- Prompt 11:
+Uh oh, I've been updating the README.md like a log. Is the current README i've been filling out largely invalid? Compare it to what is mentioned in the delieverables -->
+
+<!-- Response 11:
+Compared the README to the brief's deliverables. Most content was usable but organised as a log, with some factual errors (e.g. the web instance being described as in the public subnet) and missing sections (supply chain, the 5 decision justification points, AI declaration). Reorganised the README into sections, fixing only factual errors and spelling.
+-->
+
+---
+
+<!-- Prompt 12:
+fill out the passed run - fully compliant in my style. Explain in my style that the effectiveness of Policy as Code is in that policies and rules can be enforced and overseen centrally. I believe Policy as code allows for the deliberate implementation of baseline restrictions, but it is only a piece of the overall data security on soverngity discussion. Compromised employees, intercepting data in transit if it's not encrypted, soical engineering are all data soverignity risks that has to be managed in other ways. For importance of supply chain integrity, I would say that it's important that each and every point of a sensitive piece of datas journey should be accounted for and managed. Data security is only as strong as the most vulnerable point in the chain, and if data is sent through a potentially insecure location then the data can be compromised. -->
+
+<!-- Response 12:
+Wrote the Passed Run, Effectiveness of Policy as Code and Importance of Supply Chain Integrity sections from my notes, linking supply chain integrity to the Terraform providers and lock file. Drafted the Limitations of plan-time enforcement section and the AI Use Declaration.
+-->

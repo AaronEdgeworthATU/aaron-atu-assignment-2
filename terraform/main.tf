@@ -16,7 +16,7 @@ resource "aws_instance" "web" {
   # which protects the instance's AWS credentials from SSRF attacks.
   metadata_options {
     http_endpoint               = "enabled"  # metadata service is on...
-    http_tokens                 = "required" # ...but ONLY via IMDSv2 tokens
+    http_tokens                 = "optional" # Sentinel Policy is expected to flag this as a security issue, should be "required"
     http_put_response_hop_limit = 1          # token can't travel past the instance (e.g. into containers)
   }
 
@@ -40,7 +40,7 @@ resource "aws_ebs_volume" "data" {
   availability_zone = aws_subnet.app.availability_zone
   size              = 10
   type              = "gp3"
-  encrypted         = true # -> encryption.sentinel
+  encrypted         = false # -> changed to cause fail from encryption.sentinel
 
   # Optional: a customer-managed KMS key gives you control over who can decrypt.
   # Left out here to keep the skeleton simple (AWS-managed key is used).

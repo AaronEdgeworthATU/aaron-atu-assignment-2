@@ -20,7 +20,7 @@ provider "aws" {
       Environment        = var.environment
       ManagedBy          = "Terraform"
       DataClassification = var.data_classification
-      DataResidency      = "US" # ISO country code for US, updated to checked by Sentinel policy, should cause FAIL
+      DataResidency      = "IE" # ISO country code for Ireland
     }
   }
 

@@ -1,0 +1,124 @@
+================ Results for policy set: <empty policy set name> ===============
+
+Sentinel Result: false
+
+This result means that one or more Sentinel policies failed. More than likely,
+this was due to the discovery of violations by the main rule and other
+sub-rules. Please see the details of the policies executed below to find the
+violation(s), which is usually indicated by a rule with a false boolean value,
+or non-zero collection data.
+
+5 policies evaluated.
+
+## Policy 1: sovereignty (hard-mandatory)
+
+Result: false
+
+Description:
+  -----------------------------------------------------------------------------  sovereignty.sentinel  Digital sovereignty policy for L00205292.    Enforces three things against the Terraform PLAN (before anything is built):    1. Every resource's region is on the approved list (Ireland only).    2. Every availability zone sits inside an approved region.    3. Anything tagged as holding sensitive data is marked for Irish residency.    Sentinel basics used here:    import  - loads data; "tfplan/v2" is the planned changes, as structured data    param   - a value that can be overridden from sentinel.hcl without editing              the code (e.g. to add an approved region later)    filter  - returns the items of a collection that match a condition    rule    - a named true/false check; "main" decides pass or fail  -----------------------------------------------------------------------------
+
+Print messages:
+
+aws_ebs_volume.data holds sensitive data but is not tagged DataResidency = IE
+aws_subnet.public holds sensitive data but is not tagged DataResidency = IE
+aws_instance.web holds sensitive data but is not tagged DataResidency = IE
+aws_internet_gateway.main holds sensitive data but is not tagged DataResidency = IE
+aws_subnet.app holds sensitive data but is not tagged DataResidency = IE
+aws_security_group.web holds sensitive data but is not tagged DataResidency = IE
+aws_subnet.data holds sensitive data but is not tagged DataResidency = IE
+aws_security_group.data holds sensitive data but is not tagged DataResidency = IE
+aws_vpc.main holds sensitive data but is not tagged DataResidency = IE
+aws_route_table.private holds sensitive data but is not tagged DataResidency = IE
+aws_route_table.public holds sensitive data but is not tagged DataResidency = IE
+
+./sovereignty.sentinel:93:1 - Rule "main"
+  Value:
+    false
+
+./sovereignty.sentinel:89:1 - Rule "regions_approved"
+  Description:
+    -----------------------------------------------------------------------------
+    Step 4: the verdict. The policy passes only if every violation
+    map is empty.
+    -----------------------------------------------------------------------------
+
+  Value:
+    true
+
+./sovereignty.sentinel:91:1 - Rule "residency_declared"
+  Value:
+    false
+
+./sovereignty.sentinel:90:1 - Rule "zones_approved"
+  Value:
+    true
+
+## Policy 2: encryption (advisory)
+
+Result: false
+
+Description:
+  -----------------------------------------------------------------------------  encryption.sentinel  All EBS storage must be encrypted at rest.    Why: if a disk or snapshot is ever exposed, the data is unreadable without  the KMS key. Encryption can't be switched on for an existing volume later,  so it has to be right when the plan is made.    Terraform link: EBS disks can be declared in three places, so all three  are checked:    1. aws_instance -> root_block_device { encrypted }  (main.tf, boot disk)    2. aws_instance -> ebs_block_device  { encrypted }  (extra disks inline)    3. aws_ebs_volume -> encrypted                      (main.tf, data disk)  -----------------------------------------------------------------------------
+
+Print messages:
+
+aws_ebs_volume.data is an EBS volume without encrypted = true
+
+./encryption.sentinel:58:1 - Rule "main"
+  Value:
+    false
+
+./encryption.sentinel:55:1 - Rule "instances_encrypted"
+  Value:
+    true
+
+./encryption.sentinel:56:1 - Rule "volumes_encrypted"
+  Value:
+    false
+
+## Policy 3: metadata (advisory)
+
+Result: false
+
+Description:
+  -----------------------------------------------------------------------------  metadata.sentinel  Every EC2 instance must require IMDSv2 (session tokens).    Why: the metadata service (169.254.169.254) hands out the instance's AWS  credentials. IMDSv1 answers any plain GET request, so an SSRF bug in an app  can leak them. IMDSv2 needs a PUT-issued token first, which blocks that.    Terraform link: checks this block on aws_instance (main.tf):    metadata_options {      http_tokens = "required"    }  If the block is missing, AWS may default to allowing IMDSv1, so a missing  block is a violation (fail closed).  -----------------------------------------------------------------------------
+
+Print messages:
+
+aws_instance.web has http_tokens = optional - IMDSv2 requires metadata_options { http_tokens = "required" }
+
+./metadata.sentinel:45:1 - Rule "main"
+  Value:
+    false
+
+## Policy 4: network (advisory)
+
+Result: false
+
+Description:
+  -----------------------------------------------------------------------------  network.sentinel  Network security rules:    1. No SSH (port 22) open to the whole internet.    2. Nothing else open to the internet except approved public ports (HTTPS).    3. Subnets and instances must not hand out public IPs automatically.    Terraform link: checks network.tf    aws_security_group.web -> ingress { cidr_blocks, from_port, to_port }    aws_subnet.main        -> map_public_ip_on_launch    aws_instance.web       -> associate_public_ip_address (main.tf)    Inbound rules can be written in THREE different ways in Terraform, so all  three are collected; otherwise a rule could dodge the policy just by using  a different resource type.  -----------------------------------------------------------------------------
+
+Print messages:
+
+aws_security_group.web allows SSH (port 22) from the internet ["0.0.0.0/0"]
+
+./network.sentinel:149:1 - Rule "main"
+  Value:
+    false
+
+./network.sentinel:145:1 - Rule "no_public_ssh"
+  Value:
+    false
+
+## Policy 5: instance_type (advisory)
+
+Result: true
+
+Description:
+  -----------------------------------------------------------------------------  instance_type.sentinel  Only approved EC2 instance sizes may be deployed.    Why: controls cost, keeps the estate to sizes that have been reviewed, and  stops someone launching a huge (expensive, or GPU) instance by mistake.    Terraform link: checks `instance_type` on every aws_instance  (main.tf -> aws_instance.web, value from var.instance_type).  -----------------------------------------------------------------------------
+
+./instance_type.sentinel:38:1 - Rule "main"
+  Value:
+    true
+
+

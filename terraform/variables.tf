@@ -77,8 +77,7 @@ variable "data_subnet_cidr" {
 variable "admin_ssh_cidr" {
   description = "The ONLY network allowed to SSH in, e.g. an office or VPN range."
   type        = string
-  # Security issue to test network.sentinel policy
-  # This address all access to the Admin SSH port, which is a security issue. 
-  # The policy should  block this plan.
-  default = "0.0.0.0/0"
+  # 203.0.113.0/24 is a reserved documentation range: a safe placeholder.
+  # Never 0.0.0.0/0, which would mean "the entire internet".
+  default = "203.0.113.0/24"
 }

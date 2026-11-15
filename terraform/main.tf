@@ -8,8 +8,17 @@ resource "aws_instance" "web" {
   ami           = var.ami_id
   instance_type = var.instance_type # -> instance_type.sentinel (approved sizes)
 
-  subnet_id              = aws_subnet.main.id
+  subnet_id              = aws_subnet.app.id           # private app tier (network.tf)
   vpc_security_group_ids = [aws_security_group.web.id] # -> network.sentinel
+
+  # Instance Metadata Service (IMDS) settings -> metadata.sentinel
+  # IMDSv2 requires a session token before the metadata service answers,
+  # which protects the instance's AWS credentials from SSRF attacks.
+  metadata_options {
+    http_endpoint               = "enabled"  # metadata service is on...
+    http_tokens                 = "required" # ...but ONLY via IMDSv2 tokens
+    http_put_response_hop_limit = 1          # token can't travel past the instance (e.g. into containers)
+  }
 
   # The instance's boot disk -> encryption.sentinel
   root_block_device {
@@ -27,7 +36,8 @@ resource "aws_instance" "web" {
 # "sensitive" data, it must be encrypted AND stay in the approved region.
 resource "aws_ebs_volume" "data" {
   # Same AZ as the instance (a volume can only attach within one AZ).
-  availability_zone = aws_subnet.main.availability_zone
+  # The disk has to be in the same AZ as the instance it attaches to.
+  availability_zone = aws_subnet.app.availability_zone
   size              = 10
   type              = "gp3"
   encrypted         = true # -> encryption.sentinel

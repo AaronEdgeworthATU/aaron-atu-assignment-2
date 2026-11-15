@@ -1,0 +1,45 @@
+# -----------------------------------------------------------------------------
+# metadata.sentinel
+# Every EC2 instance must require IMDSv2 (session tokens).
+#
+# Why: the metadata service (169.254.169.254) hands out the instance's AWS
+# credentials. IMDSv1 answers any plain GET request, so an SSRF bug in an app
+# can leak them. IMDSv2 needs a PUT-issued token first, which blocks that.
+#
+# Terraform link: checks this block on aws_instance (main.tf):
+#   metadata_options {
+#     http_tokens = "required"
+#   }
+# If the block is missing, AWS may default to allowing IMDSv1, so a missing
+# block is a violation (fail closed).
+# -----------------------------------------------------------------------------
+
+import "tfplan/v2" as tfplan
+
+# EC2 instances this plan will create or update.
+instances = filter tfplan.resource_changes as _, rc {
+	rc.type is "aws_instance" and
+		rc.mode is "managed" and
+		(rc.change.actions contains "create" or rc.change.actions contains "update")
+}
+
+# Helper: read http_tokens from the (list-shaped) metadata_options block.
+# Returns "not set" if the block or value is missing/unknown at plan time.
+http_tokens = func(rc) {
+	opts = rc.change.after.metadata_options else []
+	if opts is null or length(opts) is 0 {
+		return "not set"
+	}
+	return opts[0].http_tokens else "not set"
+}
+
+violations = filter instances as _, rc {
+	http_tokens(rc) is not "required"
+}
+
+for violations as address, rc {
+	print(address, "has http_tokens =", http_tokens(rc),
+		"- IMDSv2 requires metadata_options { http_tokens = \"required\" }")
+}
+
+main = rule { length(violations) is 0 }

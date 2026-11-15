@@ -1,0 +1,38 @@
+# -----------------------------------------------------------------------------
+# instance_type.sentinel
+# Only approved EC2 instance sizes may be deployed.
+#
+# Why: controls cost, keeps the estate to sizes that have been reviewed, and
+# stops someone launching a huge (expensive, or GPU) instance by mistake.
+#
+# Terraform link: checks `instance_type` on every aws_instance
+# (main.tf -> aws_instance.web, value from var.instance_type).
+# -----------------------------------------------------------------------------
+
+import "tfplan/v2" as tfplan
+
+# The approved list. Change it here (or override it in sentinel.hcl)
+# rather than editing the logic below.
+param approved_instance_types default ["t3.micro", "t3.small", "t3.medium"]
+
+# All EC2 instances this plan will create or update.
+instances = filter tfplan.resource_changes as _, rc {
+	rc.type is "aws_instance" and
+		rc.mode is "managed" and
+		(rc.change.actions contains "create" or rc.change.actions contains "update")
+}
+
+# Instances whose type is not on the list.
+# "else null": if the value is unknown at plan time, treat it as a violation.
+# This is "fail closed": if we can't prove it's approved, we block it.
+violations = filter instances as _, rc {
+	(rc.change.after.instance_type else null) not in approved_instance_types
+}
+
+# Explain each failure in the HCP policy check output.
+for violations as address, rc {
+	print(address, "uses instance type", rc.change.after.instance_type else "unknown",
+		"- approved types are", approved_instance_types)
+}
+
+main = rule { length(violations) is 0 }
